@@ -23,6 +23,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - RabbitMQ__Host=rabbitmq
+      - JWT_SECRET_KEY=c6b5cbdc128daa0d2cd2726eacaae1266f8c8ee24fffd3e3f2bac1302b55069f
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -37,6 +38,7 @@ services:
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
       - RabbitMQ__Host=rabbitmq
+      - JWT_SECRET_KEY=c6b5cbdc128daa0d2cd2726eacaae1266f8c8ee24fffd3e3f2bac1302b55069f
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -64,3 +66,14 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+  fiap-web:
+    image: nginx:alpine
+    container_name: fiap-web
+    ports:
+      - "80:80"
+    volumes:
+      - ../FiapCloudGames-Web:/usr/share/nginx/html
+    depends_on:
+      - users-api
+      - catalog-api
