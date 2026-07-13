@@ -1,83 +1,116 @@
-# 🎮 Fiap Cloud Games (FCG) - Orquestração e Infraestrutura
+# Fiap Cloud Games - Infraestrutura e Orquestração (Tech Challenge - Fase 2)
 
-Bem-vindo ao repositório central de **Infraestrutura e Orquestração** do projeto Fiap Cloud Games (Fase 2 do Tech Challenge). 
+Este é o repositório central de infraestrutura e orquestração do projeto **Fiap Cloud Games**. O objetivo principal da Fase 2 foi realizar o desmembramento da arquitetura monolítica (Fase 1) para um ecossistema de Microsserviços Orientados a Eventos (Event-Driven Architecture), visando alta disponibilidade, escalabilidade e menor acoplamento.
 
-Este repositório tem como objetivo orquestrar a execução de toda a arquitetura de microsserviços do e-commerce de jogos da FIAP, utilizando **Docker Compose** e manifestos **Kubernetes**.
+## 🏗️ Arquitetura e Decisões Técnicas (O que mudou da Fase 1?)
+
+Na Fase 1, o sistema consistia em um único projeto Monolítico conectado a um único banco de dados. 
+Para a Fase 2, dividimos as responsabilidades em 4 microsserviços distintos, cada um com seu próprio repositório e ciclo de vida (CI/CD):
+
+1. **UsersAPI:** Responsável pela autenticação (JWT) e gestão de usuários.
+2. **CatalogAPI:** Responsável por gerenciar o catálogo de jogos, promoções e a biblioteca do usuário.
+3. **PaymentsAPI:** Responsável pelo processamento assíncrono de pagamentos.
+4. **NotificationsAPI:** Responsável pelo envio assíncrono de e-mails.
+
+### Padrão Choreography (Mensageria)
+Em vez de utilizar chamadas síncronas pesadas (HTTP/REST) entre os serviços para finalizar uma compra, implementamos o padrão de **Coreografia (Choreography)** utilizando **RabbitMQ** e **MassTransit**.
+- Isso elimina o ponto único de falha. Se o serviço de Notificação cair, a compra do usuário não é afetada. A mensagem fica na fila e é enviada quando o serviço voltar.
+
+### Padrão GitOps (Kubernetes)
+Para a infraestrutura do Kubernetes, seguimos as melhores práticas de mercado:
+- O repositório central (`FiapCloudGames-Infra`) guarda apenas manifestos comuns (`ConfigMaps`, `Secrets`, e `RabbitMQ`).
+- O manifesto de *Deployment* e *Service* de cada API fica guardado na pasta `/k8s` **do próprio repositório da API**, garantindo que as equipes tenham autonomia para atualizar seus próprios serviços de forma descentralizada.
 
 ---
 
-## 🏛️ Arquitetura do Sistema
+## 🚀 Como Executar o Projeto
 
-Na Fase 2, evoluímos a nossa aplicação monolítica para uma arquitetura distribuída em **Microsserviços**, orientada a eventos. O ecossistema é composto por 4 APIs independentes que se comunicam de forma assíncrona através de um Message Broker (RabbitMQ):
+Existem duas maneiras de subir o ambiente.
 
-1. **[UsersAPI](https://github.com/pollymsr/UsersAPI)**: Responsável pela autenticação (JWT) e gestão de usuários (Roles: Admin / User).
-2. **[CatalogAPI](https://github.com/pollymsr/CatalogAPI)**: Core do e-commerce. Gerencia o catálogo de jogos, promoções e a efetivação de compras.
-3. **[PaymentsAPI](https://github.com/pollymsr/PaymentsAPI)**: Worker assíncrono isolado que consome a fila de pedidos e processa os pagamentos.
-4. **[NotificationsAPI](https://github.com/pollymsr/NotificationsAPI)**: Worker assíncrono que escuta eventos globais do sistema e simula o envio de e-mails para os usuários.
+### Opção 1: Via Docker Compose (Homologação Rápida)
+Utilizado para subir todas as APIs, o Banco de Dados, o RabbitMQ e o Dashboard Front-end (Nginx) em um único comando:
+
+1. Abra o terminal na raiz deste repositório (`FiapCloudGames-Infra`).
+2. Execute o comando:
+   ```bash
+   docker-compose up -d --build
+   ```
+3. Acesse `http://localhost` para visualizar o Dashboard interativo de observabilidade.
+
+### Opção 2: Via Kubernetes (Padrão de Produção)
+Para simular um cluster de produção com descentralização de recursos:
+
+1. **Subir a Infraestrutura Base (ConfigMaps, Secrets, RabbitMQ):**
+   ```bash
+   cd FiapCloudGames-Infra/k8s
+   kubectl apply -f .
+   ```
+
+2. **Subir as APIs (Vá até o repositório de cada API e aplique seu manifesto):**
+   ```bash
+   cd ../UsersAPI/k8s
+   kubectl apply -f .
+   
+   cd ../CatalogAPI/k8s
+   kubectl apply -f .
+   
+   cd ../PaymentsAPI/k8s
+   kubectl apply -f .
+   
+   cd ../NotificationsAPI/k8s
+   kubectl apply -f .
+   ```
+
+3. **Verificar os Pods:**
+   ```bash
+   kubectl get pods
+   ```
 
 ---
 
-## 🚀 Como Executar o Projeto Localmente
+## 📊 Diagrama de Mensageria
 
-Requisitos: Ter o **Docker Desktop** e o **Git** instalados na sua máquina.
+```mermaid
+graph TD
+    %% Nós de Atores
+    Client((Cliente / Front-end))
 
-### 1. Clonando os Repositórios
-Para que o `docker-compose` funcione corretamente, todos os repositórios devem ser clonados dentro de uma mesma pasta "pai" (ex: `fiap-repos`), mantendo a seguinte estrutura de pastas:
-```text
-/fiap-repos
-  ├── Tech-Challenge-Fiap-Cloud-Games (Este repositório)
-  ├── UsersAPI
-  ├── CatalogAPI
-  ├── PaymentsAPI
-  └── NotificationsAPI
+    %% Nós de APIs
+    subgraph "API Gateways / REST"
+        UsersAPI[Users API]
+        CatalogAPI[Catalog API]
+    end
+
+    subgraph "Workers / Consumers"
+        PaymentsAPI[Payments API]
+        NotificationsAPI[Notifications API]
+    end
+
+    %% Message Broker
+    subgraph "Message Broker"
+        RabbitMQ{RabbitMQ / MassTransit}
+    end
+
+    %% Bancos de Dados
+    subgraph "Databases"
+        DBUsers[(SQLite: Users)]
+        DBCatalog[(SQLite: Catalog)]
+    end
+
+    %% Fluxo de Cadastro de Usuário
+    Client -- 1. POST /api/auth/register --> UsersAPI
+    UsersAPI -- 2. Salva Usuário --> DBUsers
+    UsersAPI -- 3. Publica UserCreatedEvent --> RabbitMQ
+    RabbitMQ -.->|4. Roteia Evento| NotificationsAPI
+    NotificationsAPI -- 5. Envia E-mail de Boas-vindas --> UserInbox([Caixa de Entrada])
+
+    %% Fluxo de Compra de Jogo
+    Client -- A. POST /api/games/buy --> CatalogAPI
+    CatalogAPI -- B. Publica OrderPlacedEvent --> RabbitMQ
+    RabbitMQ -.->|C. Roteia Ordem| PaymentsAPI
+    PaymentsAPI -- D. Processa e Publica PaymentProcessedEvent --> RabbitMQ
+    RabbitMQ -.->|E. Pagamento Aprovado| CatalogAPI
+    RabbitMQ -.->|F. Pagamento Aprovado| NotificationsAPI
+    CatalogAPI -- G. Adiciona Jogo na Biblioteca --> DBCatalog
+    NotificationsAPI -- H. Envia E-mail de Recibo --> UserInbox
 ```
-
-### 2. Subindo os Containers
-Acesse a pasta deste repositório de infraestrutura via terminal e execute o comando:
-```bash
-docker-compose up -d --build
-```
-Isso iniciará o RabbitMQ e os 4 microsserviços. Os bancos de dados SQLite de cada API serão criados e **povoados automaticamente** (Data Seeding) na primeira execução.
-
----
-
-## 🧪 Passo a Passo para Testes (Banca Avaliadora)
-
-Para testar o fluxo completo de negócio (Orientação a Eventos), siga os passos abaixo:
-
-### Passo 1: Autenticação (Gerando o Token)
-1. Acesse o Swagger da **UsersAPI**: `http://localhost:5001/swagger`
-2. Vá na rota `POST /api/auth/login`.
-3. O banco de dados já possui dois usuários criados por padrão para testes:
-   - **Administrador**: `admin@fiap.com.br` | Senha: `Admin123!`
-   - **Usuário Comum**: `user@fiap.com.br` | Senha: `User123!`
-4. Faça o login com o Administrador e **copie o Token JWT** gerado na resposta.
-
-### Passo 2: O Catálogo de Jogos
-1. Acesse o Swagger da **CatalogAPI**: `http://localhost:5002/swagger`
-2. Clique no botão verde **Authorize** (no topo direito), digite a palavra `Bearer `, cole o seu Token e clique em *Authorize*.
-3. Use a rota `GET /api/games` e clique em *Execute*. O banco de dados já subirá com 3 jogos incríveis pré-cadastrados (Elden Ring, Black Myth Wukong e Hellblade II).
-4. Copie o **Id** de um dos jogos.
-
-### Passo 3: O Fluxo de Compra e Eventos em Background
-1. Ainda no Swagger da **CatalogAPI**, vá na rota `POST /api/games/{id}/buy`.
-2. Cole o **Id** do jogo que você copiou e execute.
-3. Você receberá um `202 Accepted` ("Pedido de compra recebido com sucesso!").
-
-Neste exato momento, a mágica dos Microsserviços acontece:
-- A `CatalogAPI` publicou um evento `OrderPlacedEvent` no RabbitMQ.
-- A `PaymentsAPI` interceptou o pedido, processou o pagamento e publicou o evento `PaymentProcessedEvent`.
-- A `CatalogAPI` interceptou o pagamento e adicionou o jogo na Biblioteca do usuário.
-- A `NotificationsAPI` escutou o sucesso e disparou o E-mail de confirmação.
-
-### Passo 4: Validando o Sucesso
-1. Verifique os logs do Docker para ver os Workers trabalhando em background:
-```bash
-docker logs payments-api
-docker logs notifications-api
-```
-2. No Swagger da `CatalogAPI`, execute a rota `GET /api/games/library`. Você verá que o jogo comprado já está disponível na biblioteca do usuário!
-
----
-
-Projeto desenvolvido por Pollyana para a fase 2 da pós-graduação.
