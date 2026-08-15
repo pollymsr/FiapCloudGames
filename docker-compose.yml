@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
@@ -39,8 +61,15 @@ services:
       - ASPNETCORE_ENVIRONMENT=Development
       - RabbitMQ__Host=rabbitmq
       - JWT_SECRET_KEY=c6b5cbdc128daa0d2cd2726eacaae1266f8c8ee24fffd3e3f2bac1302b55069f
+      - ConnectionStrings__MongoDB=mongodb://mongodb:27017
+      - ConnectionStrings__Redis=redis:6379
+      - DatabaseName=CatalogDb
     depends_on:
       rabbitmq:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   payments-api:
