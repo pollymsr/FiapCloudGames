@@ -1,0 +1,33 @@
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: jwt-auth
+plugin: jwt
+config:
+  secret_is_base64: false
+  # Kong procurará o JWT nos headers 'Authorization'
+  uri_param_names: "jwt"
+  cookie_names: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jwt-fiap-cloud-games-users
+  annotations:
+    kubernetes.io/ingress.class: kong
+type: Opaque
+stringData:
+  kongCredType: jwt
+  key: "FiapCloudGames"
+  secret: "c6b5cbdc128daa0d2cd2726eacaae1266f8c8ee24fffd3e3f2bac1302b55069f"
+  algorithm: "HS256"
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongConsumer
+metadata:
+  name: fiap-cloud-games-users
+  annotations:
+    kubernetes.io/ingress.class: kong
+username: fiap-cloud-games-users
+credentials:
+- jwt-fiap-cloud-games-users
